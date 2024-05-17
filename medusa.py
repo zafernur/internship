@@ -46,6 +46,38 @@ def create_csv(input_files):
                     line = line[4:14]+'\t'+line[17:28]+'\t'+line[29:]
                     fp.write(line)
 
+def broadening(csv_files, c0, c1, c2):
+    """
+    Calculates the Gaussian broadening of the tally probabilities that obtained form MCNP, and modifies
+    the csv files by wiriting these broadened values as a new column.
+
+    Args:
+        csv_files (list): List of string that contains the name of csv files 
+                          which are extracted from an MCNP RhoC detector simulation output file.
+        c0, c1, c2 (float): Coefficients that determine the desired energy resolution.
+
+    Returns:
+        None: It modifies the csv files by adding a cloumn that contains the broadened values.
+    """
+    for file in csv_files:
+        df = pd.read_csv(file, sep='\t', header=None, names=['Energy', 'Probabilities', 'Errors'])
+        #PH_UnknownFWHM2ResolutionFactor = 1.5329
+        result = np.zeros(len(df['Probabilities']), float)
+        for i in range(len(df['Probabilities'])):
+            if df['Probabilities'][i] != 0:
+                integral = 0
+                E0 = i / 100
+                w = c0 + c1 * np.sqrt(E0 + E0 * E0 * c2) # width
+                for j in range(len(df['Probabilities'])):
+                    E = j / 100 # energy in MeV
+                    if w > 0:
+                        gauss = np.exp(-((E - E0) / w)**2) / (np.sqrt(np.pi) * w)
+                    else: gauss = 0
+                    integral = integral + gauss
+                    result[j] = result[j] + df['Probabilities'][i] * gauss / 100
+        df['Broadened'] = result
+        df.to_csv(file, index=False, header=False, sep='\t')
+
 def source_activity(calibration_date=datetime.today().strftime('%Y/%m/%d'), strength_date='2024/1/15', half_life=2605):
     """
     Calculates source activity for a certain measurement date.
