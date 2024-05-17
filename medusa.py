@@ -78,12 +78,12 @@ def broadening(csv_files, c0, c1, c2):
         df['Broadened'] = result
         df.to_csv(file, index=False, header=False, sep='\t')
 
-def source_activity(calibration_date=datetime.today().strftime('%Y/%m/%d'), strength_date='2024/1/15', half_life=2605):
+def source_activity(measurement_date=datetime.today().strftime('%Y/%m/%d'), strength_date='2024/1/15', half_life=2605):
     """
     Calculates source activity for a certain measurement date.
 
     Args:
-        calibration_date (str): The date that the desired source activity is determined. It must be
+        measurement_date (str): The date that the desired source activity is determined. It must be
                                 given in the format of YYYY/MM/DD as string. Default: th day function is run.
         strength_date (str): The default value is the strength date of the Na-22 source. It was taken
                             from the provider of the source. It must be given in the format of YYYY/MM/DD.
@@ -92,26 +92,26 @@ def source_activity(calibration_date=datetime.today().strftime('%Y/%m/%d'), stre
     Returns:
         float: Source activitiy.
     """
-    time_difference = datetime.strptime(calibration_date, "%Y/%m/%d") - datetime.strptime(strength_date, "%Y/%m/%d")
-    s_act = 2**(-((time_difference.days)/365.25)/half_life)
-    return s_act
+    time_difference = datetime.strptime(measurement_date, "%Y/%m/%d") - datetime.strptime(strength_date, "%Y/%m/%d")
+    return 2**(-((time_difference.days)/365.25)/half_life)
 
-def particle_per_second(branching_ratio=2.7985, source_strength=1049000):
+def particle_per_second(activity, branching_ratio=2.7985, source_strength=1049000):
     """
     Calculates how many particles a sources radiates per second.
 
     Args:
-        source_activity (float): Look at the function named source_activity.
+        activity (float): Activitiy of the gamma-ray source. The activity can be passed
+                          directly as a float for a certain source element or the source_activity function
+                          can be passed with its arguments.
         branching_ratio (float): The default value is for Na-22 isotope.
-        source_strength (int or float): The default value is for Na-22 isotope.
-        It is taken from provider.
+        source_strength (int or float): The default value is for Na-22 isotope. It is taken from provider.
 
     Returns:
         float: The number of particles radiated by the soruce per second.
     """
-    return source_activity()*branching_ratio*source_strength
+    return activity*branching_ratio*source_strength
 
-def convert_probs_to_counts(csv_files, live_time):
+def convert_probs_to_counts(csv_files, particle_per_second, live_time):
     """
     Converts the each broadened probability of tally to particle counts.
 
@@ -119,55 +119,70 @@ def convert_probs_to_counts(csv_files, live_time):
         csv_files (list): List of string that contains the name of csv files 
                           which are extracted from an MCNP RhoC detector simulation output file.
                           The probabilities of the tally should be broadened first.
-        particle_per_second (Float): Look at the function named particle_per_second.
+        particle_per_second (Float): Look at the function named particle_per_second or pass an
+                                     explicit particle per second value for your source element.
         live_time (Float): The duration of measurement that will be compared to this simluation.
     
     Returns:
         None: It modifies the csv files by adding a cloumn that contains calculated counts.
     """
     for file in csv_files:
-        # read file
-        lines = []
-        with open(file, 'r+') as fp:
-            # read and store all the lines into the lines list
-            lines = fp.readlines()
-            #iterate each line
-            for line in lines:
-                line = line[:-1] + '\t' + str(float(line[11:22]) * particle_per_second() 
-                                              * live_time)
-                fp.write(line)
+        df = pd.read_csv(file, sep='\t', header=None, names=['Energies', 'Probabilities',
+                                                             'Errors', 'Broadenings'])
+        df['Counts'] = df['Broadenings'] * particle_per_second * live_time
+        df.to_csv(file, index=False, header=False, sep='\t')
 
-def plot_spectrum(csv_files,  savefig_name):
-    # make a function creates df from csv files
-    # then change the data argument of this function to df
-    # thus, this can be used with any df seperately
+def plot_spectrum(x, y, labels, savefig_name, title, xlabel, ylabel, yscale='linear', plot_type='scatter', **kwargs):
     """
-    Plot the spectra obtained from MCNP simulations in one plot, on top of each other.
+    Plots the spectra obtained from MCNP simulations in one plot, on top of each other.
 
     Args:
-        csv_files (list): List of string that contains the name of csv files 
-                          which are extracted from an MCNP RhoC detector simulation output file.
-                          The files must contain converted counts as fifth coulmn.
+        x (list, array or dataframe): Data series for x axis. It can be a list 1D array,
+                                      array column, array row, dataframe, dataframe column,
+                                      or dataframe row.
+        y (list): List of dataseries for y axis. If there are more than one, then the plot
+                  will contain every data in one axis.
+        labels (list): The list of labels to put on the legend of the plot.
         savefig_name (str): String that specifies the name of the output file as png.
+        title (str): For title of the plot.
+        xlabel (str): For the label of the x-axis.
+        ylabel (str): For the label of the y-axis.
+        yscale (str): For the scale type of the y-axis. It can be linear, log, symlog, or logit.
+                      The default value is linear.
+        plot_type (str): The type of the plot. It can be scatter, stackplot, line, or bar. The
+                         default value is scatter.
+        **kwargs (Any): All the line properties from matplotlib can be used in the same way here.
     
     Return:
         Axes: It saves the plot in a png file and shows it on your screen.
     """
     fig, ax = plt.subplots(1, 1, dpi=200)
-    for i, file in enumerate(csv_files):
-        df = pd.read_csv(file, sep='\t', header=None, names=['Energy', 'Probabilities', 'Errors'])
-        ax.stackplot(df['Energy'][2:151]*1000, df['Probabilities'][2:151], alpha = 0.3)
-    ax.set_title('RhoC 5')
-    ax.set_xlabel('Energy (KeV)')
-    ax.set_ylabel('Counts')
+    if plot_type == 'scatter':
+        for i in range(len(y)):
+            ax.scatter(x, y[i], **kwargs)
+    elif plot_type == 'stackplot':
+        for i in range(len(y)):
+            ax.stackplot(x, y[i], **kwargs)
+    elif plot_type == 'line':
+        for i in range(len(y)):
+            ax.line(x, y[i], **kwargs)
+    elif plot_type == 'bar':
+        for i in range(len(y)):
+            ax.bar(x, y[i], **kwargs)
+    else:
+        raise ValueError("Invalid plot type. Choose from 'scatter', 'stackplot',  'line', or 'bar'.")
+    
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
     ax.set_xlim(0)
-    ax.set_yscale('log')
+    ax.set_yscale(yscale)
     ax.minorticks_on()
     ax.tick_params(which='both', direction='in', top=True, right=True)
-    if len(csv_files) == 1:
+    if len(y) == 1:
         plt.savefig(savefig_name, edgecolor='none', transparent=True)
     else:
-        ax.legend([file[6:-4] for file in csv_files], fontsize=7, fancybox=False,
+        ax.legend([label for label in labels], fontsize=7, fancybox=False,
                   framealpha= 0.0, facecolor='inherit')
         plt.savefig(savefig_name, edgecolor='none', transparent=True)
     return ax
