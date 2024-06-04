@@ -163,7 +163,7 @@ def csv_to_dfs(csv_files: Union[str, List[str]], *args, titels=['Energies', 'Pro
         return dfs
 
 def plot_spectrum(x, y, labels, savefig_name, title, xlabel, ylabel, colors=None, fig_size=(8,4), x_lims=False, y_lims=False,
-                  yscale='linear', plot_type='scatter', grid_major=False, grid_minor=False, **kwargs):
+                  yscale='linear', plot_type='scatter', grid_major=True, grid_minor=True, transparent=True, **kwargs):
     """
     Plots the spectra obtained from MCNP simulations in one plot, on top of each other.
 
@@ -237,16 +237,16 @@ def plot_spectrum(x, y, labels, savefig_name, title, xlabel, ylabel, colors=None
         ax.grid(which='minor', color='#DDDDDD', linestyle=':', linewidth=0.6)
     else: ax.grid(visible=False, which='minor')
     if len(y) == 1:
-        plt.savefig(savefig_name, edgecolor='none', transparent=True)
+        plt.savefig(savefig_name, edgecolor='none', transparent=transparent)
     else:
         ax.legend([label for label in labels], fontsize=7, fancybox=False,
                   framealpha= 0.0, facecolor='inherit')
-        plt.savefig(savefig_name, edgecolor='none', transparent=True)
+        plt.savefig(savefig_name, edgecolor='none', transparent=transparent)
     return ax
 
 def plot_spectrumv2(dfs, which_dataframes, column_name_for_x, column_name_for_y, start_x, end_x,
                     labels, savefig_name, title, xlabel, ylabel, colors=None, fig_size=(8,4), x_lims=False, y_lims=False,
-                    yscale='linear', plot_type='scatter', grid_major=False, grid_minor=False, **kwargs):
+                    yscale='linear', plot_type='scatter', grid_major=True, grid_minor=True, transparent=True, **kwargs):
     """
     Plots the spectra obtained from MCNP simulations in one plot, on top of each other.
 
@@ -332,9 +332,9 @@ def plot_spectrumv2(dfs, which_dataframes, column_name_for_x, column_name_for_y,
         ax.grid(which='minor', color='#DDDDDD', linestyle=':', linewidth=0.6)
     else: ax.grid(visible=False, which='minor')
     if len(which_dataframes) == 1:
-        plt.savefig(savefig_name, edgecolor='none', transparent=True)
+        plt.savefig(savefig_name, edgecolor='none', transparent=transparent)
     else:
         ax.legend([label for label in labels], fontsize=7, fancybox=False,
                   framealpha= 0.0, facecolor='inherit')
-        plt.savefig(savefig_name, edgecolor='none', transparent=True)
+        plt.savefig(savefig_name, edgecolor='none', transparent=transparent)
     return ax
