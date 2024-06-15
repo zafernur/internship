@@ -211,7 +211,7 @@ class SimulationAnalysis:
             starting_index = dfs[df].index[dfs[df]['Energies'] == starting_bin][0]
             ending_index = dfs[df].index[dfs[df]['Energies'] == ending_bin][0]
             integrals.append(sum(dfs[df]['Counts'][starting_index:ending_index+1]))
-        df = pd.DataFrame({'labels': list(range(dfs.keys())), 'integrals': integrals})
+        df = pd.DataFrame({'labels': list(range(len(dfs.keys()))), 'integrals': integrals})
         dfs.update({'Integrals': df})
         return dfs
 
