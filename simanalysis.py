@@ -193,6 +193,28 @@ class SimulationAnalysis:
                     dfs[args[i-1]] = pd.read_csv(file, sep='\t', header=None, names=titels)
             return dfs
     
+    def integrate_spectrum(self, dfs, starting_bin, ending_bin):
+        """
+        Integrates the counts of a spectrum over a given interval.
+
+        Args:
+            dfs (dict): A dictionary that contains the spectra as dataframes.
+            starting_bin (float): Starting point of the interval. Energy in MeV.
+            ending_bin (float): Ending point of the interval. Energy in MeV
+        
+        Returns:
+            dict: The dictionary given as the parameter, added the integrals as a dataframe.
+        """
+        
+        integrals = []
+        for df in dfs:
+            starting_index = dfs[df].index[dfs[df]['Energies'] == starting_bin][0]
+            ending_index = dfs[df].index[dfs[df]['Energies'] == ending_bin][0]
+            integrals.append(sum(dfs[df]['Counts'][starting_index:ending_index+1]))
+        df = pd.DataFrame({'labels': list(range(dfs.keys())), 'integrals': integrals})
+        dfs.update({'Integrals': df})
+        return dfs
+
     def plot_spectrumv2(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, start_x, end_x,
                         labels, savefig_name, title, xlabel, ylabel, colors=None, fig_size=(8,4), x_lims=False, y_lims=False,
                         yscale='linear', plot_type='scatter', grid_major=True, grid_minor=True, transparent=True, **kwargs):
