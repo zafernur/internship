@@ -1,9 +1,11 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.ticker as tck
 from datetime import datetime
 import os
 from typing import Union, List
+from uncertainties import ufloat
 
 class SimulationAnalysis:
     """
@@ -87,10 +89,13 @@ class SimulationAnalysis:
         """
         for file in files:
             df = pd.read_csv(file, sep='\t', header=None, names=['Energy', 'Probabilities', 'Errors'])
+            df['Errors'] = df['Probabilities'] * df['Errors']
+            values_with_errors = [ufloat(val, err) for val, err in zip(df['Probabilities'], df['Errors'])]
             #PH_UnknownFWHM2ResolutionFactor = 1.5329
             result = np.zeros(len(df['Probabilities']), float)
+            result_errors = np.zeros(len(df['Probabilities']), float)
             for i in range(len(df['Probabilities'])):
-                if df['Probabilities'][i] != 0:
+                if values_with_errors[i] != 0:
                     integral = 0
                     E0 = i / 100
                     w = self.c0 + self.c1 * np.sqrt(E0 + E0 * E0 * self.c2) # width
@@ -100,8 +105,10 @@ class SimulationAnalysis:
                             gauss = np.exp(-((E - E0) / w)**2) / (np.sqrt(np.pi) * w)
                         else: gauss = 0
                         integral = integral + gauss
-                        result[j] = result[j] + df['Probabilities'][i] * gauss / 100
-            df['Broadened'] = result
+                        result[j] += values_with_errors[i].nominal_value * gauss / 100
+                        result_errors[j] += (values_with_errors[i].std_dev / 100) * gauss
+            df['Broadened'] = [f"{val:.1e}" for val in result]
+            df['Broadened_error'] = [f"{err:.1e}" for err in result_errors]
             df.to_csv(file, index=False, header=False, sep='\t')
     
     def get_measurement_date(self):
@@ -140,7 +147,7 @@ class SimulationAnalysis:
         """
         To evaluate the counts correctly, the live time of the measurement to be compared must be known.
         """
-        live_time = int(input('Enter the live time of the measurement...'))
+        live_time = float(input('Enter the live time of the measurement...'))
         return live_time
 
     def convert_probs_to_counts(self, files, particle_rate, live_time):
@@ -155,13 +162,27 @@ class SimulationAnalysis:
         Returns:
             None: It modifies the csv files by adding a cloumn that contains calculated counts.
         """
+        
         for file in files:
             df = pd.read_csv(file, sep='\t', header=None, names=['Energies', 'Probabilities',
-                                                                 'Errors', 'Broadenings'])
-            df['Counts'] = df['Broadenings'] * particle_rate * live_time
+                                                                 'Errors', 'Broadenings', 'Broadening_errors'])
+            result = np.zeros(len(df['Broadenings']), float)
+            result_errors = np.zeros(len(df['Broadenings']), float)
+            values_with_errors = [ufloat(val, err) for val, err in zip(df['Broadenings'], df['Broadening_errors'])]
+            for i in range(len(df['Broadenings'])):    
+                result[i] += values_with_errors[i].nominal_value * particle_rate * live_time
+                result_errors[i] += values_with_errors[i].std_dev * particle_rate * live_time
+            df['Counts'] = [f"{val:.1e}" for val in result]
+            df['Counts_error'] = [f"{err:.1e}" for err in result_errors]
             df.to_csv(file, index=False, header=False, sep='\t')
     
-    def csv_to_dfs(self, files: Union[str, List[str]], *args, titels=['Energies', 'Probs', 'Errors', 'Broadened', 'Counts']):
+    def csv_to_dfs(self, files: Union[str, List[str]], *args, titels=['Energies',
+                                                                      'Probs',
+                                                                      'Errors',
+                                                                      'Broadened',
+                                                                      'Broadened_errors',
+                                                                      'Counts',
+                                                                      'Count_errors']):
         """
         Creates dataframe(s) from a given csv file(s). The csv files must be in the same column format
         and contain same type of data.
@@ -205,18 +226,25 @@ class SimulationAnalysis:
         Returns:
             dict: The dictionary given as the parameter, added the integrals as a dataframe.
         """
-        
+        labels = list(range(1, len(dfs.keys()) + 1))
         integrals = []
+        integrals_error = []
         for df in dfs:
+            if 'Count_errors' in dfs[df].columns:
+                pass
+            else:
+                dfs[df]['Count_errors'] = 0.0
+            values_with_errors = [ufloat(val, err) for val, err in zip(dfs[df]['Counts'], dfs[df]['Count_errors'])]
             starting_index = dfs[df].index[dfs[df]['Energies'] == starting_bin][0]
             ending_index = dfs[df].index[dfs[df]['Energies'] == ending_bin][0]
-            integrals.append(sum(dfs[df]['Counts'][starting_index:ending_index+1]))
-        df = pd.DataFrame({'labels': list(range(len(dfs.keys()))), 'integrals': integrals})
-        dfs.update({'Integrals': df})
+            integrals.append(sum(values_with_errors[starting_index:ending_index+1]).nominal_value)
+            integrals_error.append(sum(values_with_errors[starting_index:ending_index+1]).std_dev)
+        df1 = pd.DataFrame({'labels': labels, 'integrals': integrals, 'integrals_error': integrals_error})
+        dfs.update({'Integrals': df1})
         return dfs
 
     def plot_spectrumv2(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, start_x, end_x,
-                        labels, savefig_name, title, xlabel, ylabel, colors=None, fig_size=(8,4), x_lims=False, y_lims=False,
+                        savefig_name, title, xlabel, ylabel, labels=None, colors=None, fig_size=(8,4), x_lims=False, y_lims=False,
                         yscale='linear', plot_type='scatter', grid_major=True, grid_minor=True, transparent=True, **kwargs):
         """
         Plots the spectra obtained from MCNP simulations in one plot, on top of each other.
@@ -240,8 +268,9 @@ class SimulationAnalysis:
             y_lims (list): A list with two element as lowest and highest limits for y-axis. Default: False
             yscale (str): For the scale type of the y-axis. It can be linear, log, symlog, or logit.
                           The default value is linear.
-            plot_type (str): The type of the plot. It can be scatter, stackplot, line, or bar. The
-                             default value is scatter.
+            plot_type (str): The type of the plot. It can be scatter, stackplot, line, bar, or errorbar. The
+                             default value is scatter. If the user chooses errorbar, it uses the dataframe
+                             'Integral' as parameter no matter what the user gives as datarframe to plot.
             grid_major (bool): To put major grid lines. Default is Flase.
             grid_minor (bool): To put minor grid lines. Default is Flase.
             **kwargs (Any): All the line properties from matplotlib can be used in the same way here.
@@ -260,6 +289,10 @@ class SimulationAnalysis:
                 else:
                     ax.scatter(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_yscale(yscale)
+            ax.minorticks_on()
+            ax.tick_params(which='both', direction='in', top=True, right=True)
+            ax.set_axisbelow(True)
         elif plot_type == 'stackplot':
             for i in range(len(which_dataframes)):
                 if colors:
@@ -268,6 +301,10 @@ class SimulationAnalysis:
                 else:
                     ax.stackplot(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_yscale(yscale)
+            ax.minorticks_on()
+            ax.tick_params(which='both', direction='in', top=True, right=True)
+            ax.set_axisbelow(True)
         elif plot_type == 'line':
             for i in range(len(which_dataframes)):
                 if colors:
@@ -276,6 +313,10 @@ class SimulationAnalysis:
                 else:
                     ax.line(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_yscale(yscale)
+            ax.minorticks_on()
+            ax.tick_params(which='both', direction='in', top=True, right=True)
+            ax.set_axisbelow(True)
         elif plot_type == 'bar':
             for i in range(len(which_dataframes)):
                 if colors:
@@ -284,18 +325,29 @@ class SimulationAnalysis:
                 else:
                     ax.bar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_yscale(yscale)
+            ax.minorticks_on()
+            ax.tick_params(which='both', direction='in', top=True, right=True)
+            ax.set_axisbelow(True)
+        elif plot_type == 'errorbar':
+            ax.errorbar(dfs['Integrals']['labels'],
+                               dfs['Integrals']['integrals'], yerr=dfs['Integrals']['integrals_error'], fmt='o', **kwargs)
+            ax.tick_params(which='both', direction='in', top=True, right=True)
+            ax.set_axisbelow(True)
+            ax.ticklabel_format(useMathText=True)
+            ax.ticklabel_format(style='sci', axis = 'y', scilimits =(2,3))
+            ax.set_xticks(dfs['Integrals']['labels'], labels= list(dfs.keys())[:len(dfs.keys())-1], fontsize=8)
+            ax.minorticks_off()
+            ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
         else:
-            raise ValueError("Invalid plot type. Choose from 'scatter', 'stackplot',  'line', or 'bar'.")
+            raise ValueError("Invalid plot type. Choose from 'scatter', 'stackplot',  'line', 'bar', or 'errorbar'.")
         
         ax.set_title(title)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(ylabel)
         ax.set_xlim(x_lims)
         ax.set_ylim(y_lims)
-        ax.set_yscale(yscale)
-        ax.minorticks_on()
-        ax.tick_params(which='both', direction='in', top=True, right=True)
-        ax.set_axisbelow(True)
+        
         if grid_major:
             ax.grid(which='major', color='#DDDDDD', linewidth=0.8)
         else: ax.grid(visible=False, which='major')
