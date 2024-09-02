@@ -59,7 +59,8 @@ class SimulationAnalysis:
             with open(file, 'r') as fp:
             # read and store all the lines into the lines list
                 lines = fp.readlines()
-            the_line = lines.index(' cell  40                                                                                                                              \n')
+            crystal_cell = next((line.split("F8:P")[1].strip() for line in lines if "F8:P" in line), None)
+            the_line = lines.index(f' cell  {crystal_cell}                                                                                                                              \n')
             if file[-3] == '0':
                 with open(file[:-3]+'csv', 'w') as fp:
                 #iterate each line
@@ -107,8 +108,8 @@ class SimulationAnalysis:
                         integral = integral + gauss
                         result[j] += values_with_errors[i].nominal_value * gauss / 100
                         result_errors[j] += (values_with_errors[i].std_dev / 100) * gauss
-            df['Broadened'] = [f"{val:.1e}" for val in result]
-            df['Broadened_error'] = [f"{err:.1e}" for err in result_errors]
+            df['Broadened'] = [f"{val:.6e}" for val in result]
+            df['Broadened_error'] = [f"{err:.6e}" for err in result_errors]
             df.to_csv(file, index=False, header=False, sep='\t')
     
     def get_measurement_date(self):
@@ -172,8 +173,8 @@ class SimulationAnalysis:
             for i in range(len(df['Broadenings'])):    
                 result[i] += values_with_errors[i].nominal_value * particle_rate * live_time
                 result_errors[i] += values_with_errors[i].std_dev * particle_rate * live_time
-            df['Counts'] = [f"{val:.1e}" for val in result]
-            df['Counts_error'] = [f"{err:.1e}" for err in result_errors]
+            df['Counts'] = [f"{val:.6e}" for val in result]
+            df['Counts_error'] = [f"{err:.6e}" for err in result_errors]
             df.to_csv(file, index=False, header=False, sep='\t')
     
     def csv_to_dfs(self, files: Union[str, List[str]], *args, titels=['Energies',
@@ -243,9 +244,10 @@ class SimulationAnalysis:
         dfs.update({'Integrals': df1})
         return dfs
 
-    def plot_spectrumv2(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, start_x, end_x,
-                        savefig_name, title, xlabel, ylabel, labels=None, colors=None, fig_size=(8,4), x_lims=False, y_lims=False,
-                        yscale='linear', plot_type='scatter', grid_major=True, grid_minor=True, transparent=True, **kwargs):
+    def plot_spectrum(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, column_name_for_errors=None,
+                      start_x=0, end_x=300, savefig_name=' ', title=' ', xlabel=' ', ylabel=' ', labels=None, colors=None,
+                      fig_size=(8,4), x_lims=False, y_lims=False, xscale='linear', yscale='linear', plot_type='scatter',
+                      grid_major=True, grid_minor=True, trans=True, **kwargs):
         """
         Plots the spectra obtained from MCNP simulations in one plot, on top of each other.
     
@@ -289,6 +291,7 @@ class SimulationAnalysis:
                 else:
                     ax.scatter(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_xscale(xscale)
                 ax.set_yscale(yscale)
             ax.minorticks_on()
             ax.tick_params(which='both', direction='in', top=True, right=True)
@@ -301,6 +304,7 @@ class SimulationAnalysis:
                 else:
                     ax.stackplot(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_xscale(xscale)
                 ax.set_yscale(yscale)
             ax.minorticks_on()
             ax.tick_params(which='both', direction='in', top=True, right=True)
@@ -313,6 +317,7 @@ class SimulationAnalysis:
                 else:
                     ax.line(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_xscale(xscale)
                 ax.set_yscale(yscale)
             ax.minorticks_on()
             ax.tick_params(which='both', direction='in', top=True, right=True)
@@ -325,20 +330,28 @@ class SimulationAnalysis:
                 else:
                     ax.bar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
                                dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
+                ax.set_xscale(xscale)
                 ax.set_yscale(yscale)
             ax.minorticks_on()
             ax.tick_params(which='both', direction='in', top=True, right=True)
             ax.set_axisbelow(True)
         elif plot_type == 'errorbar':
-            ax.errorbar(dfs['Integrals']['labels'],
-                               dfs['Integrals']['integrals'], yerr=dfs['Integrals']['integrals_error'], fmt='o', **kwargs)
+            for i in range(len(which_dataframes)):
+                ax.errorbar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                        dfs[which_dataframes[i]][column_name_for_y][start_x:end_x],
+                        yerr=dfs[which_dataframes[i]][column_name_for_errors][start_x:end_x], fmt='o', **kwargs)
             ax.tick_params(which='both', direction='in', top=True, right=True)
             ax.set_axisbelow(True)
-            ax.ticklabel_format(useMathText=True)
-            ax.ticklabel_format(style='sci', axis = 'y', scilimits =(2,3))
-            ax.set_xticks(dfs['Integrals']['labels'], labels= list(dfs.keys())[:len(dfs.keys())-1], fontsize=8)
-            ax.minorticks_off()
-            ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
+            if which_dataframes == 'Integrals':
+                ax.ticklabel_format(useMathText=True)
+                ax.ticklabel_format(style='sci', axis = 'y', scilimits =(2,3))
+                ax.set_xticks(dfs['Integrals']['labels'], labels= list(dfs.keys())[:len(dfs.keys())-1], fontsize=8)
+                ax.minorticks_off()
+                ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
+            else:
+                ax.set_xscale(xscale)
+                ax.set_yscale(yscale)
+                ax.minorticks_on()
         else:
             raise ValueError("Invalid plot type. Choose from 'scatter', 'stackplot',  'line', 'bar', or 'errorbar'.")
         
@@ -355,11 +368,11 @@ class SimulationAnalysis:
             ax.grid(which='minor', color='#DDDDDD', linestyle=':', linewidth=0.6)
         else: ax.grid(visible=False, which='minor')
         if len(which_dataframes) == 1:
-            plt.savefig(savefig_name, edgecolor='none', transparent=transparent)
+            plt.savefig(savefig_name, edgecolor='none', transparent=trans)
         else:
             ax.legend([label for label in labels], fontsize=7, fancybox=False,
                       framealpha= 0.0, facecolor='inherit')
-            plt.savefig(savefig_name, edgecolor='none', transparent=transparent)
+            plt.savefig(savefig_name, edgecolor='none', transparent=trans)
         return fig, ax
 
     def execute(self):
