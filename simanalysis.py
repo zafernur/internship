@@ -159,6 +159,8 @@ class SimulationAnalysis:
             files (list): List of string that contains the name of csv files 
                           which are extracted from an MCNP RhoC detector simulation output file.
                           The probabilities of the tally should be broadened first.
+            particle_rate (float): The number of particles that are radiated by the source.
+            live_time (float/int): The measurement time of the detector in seconds.
         
         Returns:
             None: It modifies the csv files by adding a cloumn that contains calculated counts.
@@ -215,14 +217,16 @@ class SimulationAnalysis:
                     dfs[args[i-1]] = pd.read_csv(file, sep='\t', header=None, names=titels)
             return dfs
     
-    def integrate_spectrum(self, dfs, starting_bin, ending_bin):
+    def integrate_spectrum(self, dfs, starting_bin, ending_bin, live_time):
         """
-        Integrates the counts of a spectrum over a given interval.
+        Integrates the counts of a spectrum over a given interval, and calculates the count
+        per second (cps) value of the interval.
 
         Args:
             dfs (dict): A dictionary that contains the spectra as dataframes.
             starting_bin (float): Starting point of the interval. Energy in MeV.
             ending_bin (float): Ending point of the interval. Energy in MeV
+            live_time (float/int): The measurement time of the detector in seconds.
         
         Returns:
             dict: The dictionary given as the parameter, added the integrals as a dataframe.
@@ -242,6 +246,17 @@ class SimulationAnalysis:
             integrals_error.append(sum(values_with_errors[starting_index:ending_index+1]).std_dev)
         df1 = pd.DataFrame({'labels': labels, 'integrals': integrals, 'integrals_error': integrals_error})
         dfs.update({'Integrals': df1})
+        
+        # count per second calculations
+        cps_with_errors = [ufloat(val, err) for val, err in zip(dfs['Integrals']['integrals'],
+                                                                dfs['Integrals']['integrals_error'])]
+        nom_val = []
+        err_val = []
+        for i in range(len(cps_with_errors)):
+            nom_val.append(cps_with_errors[i].nominal_value / live_time)
+            err_val.append(cps_with_errors[i].std_dev / live_time)
+        dfs['Integrals']['count_rates'] = nom_val
+        dfs['Integrals']['count_rates_error'] = err_val
         return dfs
 
     def plot_spectrum(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, column_name_for_errors=None,
