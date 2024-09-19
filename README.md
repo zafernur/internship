@@ -1,2 +1,2 @@
 # internship
-This repository contains the codes that I wrote for my industrial internship. The internship is done at Medusa Radiometrics about natural gamma ray detectors.
+This repository contains the code developed during my industrial internship at Medusa Radiometrics, focusing on naturally occurring gamma-ray detectors.
