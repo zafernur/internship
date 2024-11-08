@@ -21,10 +21,18 @@ class SimulationAnalysis:
     """
     def __init__(self):
         self.c0 = 0.0; self.c1 = 0.04; self.c2 = 0.0
+        self.avogadro = 6.022e23
+        # RhoC source data
         self.strength_date = '2024/1/15'
         self.half_life = 2605
         self.branching_ratio=2.7985
         self.source_strength=1049000
+
+        # Saltmine soruce material data (50% KCl + 50% NaCl)
+        self.weight_fraction_of_K = 0.524 # Fraction in KCl
+        self.abundance_K40 = 0.000117
+        self.decay_constant_K40 = 1.76e-17 # in [1/s]
+        self.branching_K40 = 0.1067
 
     def create_list_of_files(self, extension, directory=os.getcwd()):
         """
@@ -140,9 +148,30 @@ class SimulationAnalysis:
             source_activity (float): The acitvity of the source.
     
         Returns:
-            float: The number of particles radiated by the soruce per second.
+            float: The number of particles radiated by the source per second.
         """
         return source_activity * self.branching_ratio * self.source_strength
+    
+    def sample_sepcific_activity(self, sample_volume, sample_density):
+        """
+        Calculates the specific activity of a given sample in [Bq/kg].
+
+        Args:
+            sample_volume (float): The volume of the sample for which specific activity is to be calculated. in [cm^3]
+            sample_density (float): The density of the sample for which specific activity is to be calculated. in [g/cm^3]
+    
+        Returns:
+            tuple: The first element: The number of particles radiated by the sample per second per kilogram. in [Bg/kg]
+                   The second element: The total mass of the sample. in [kg]
+        """
+        total_sample_mass = sample_density * sample_volume
+        mass_of_KCl = total_sample_mass / 2                 # Assuming (50% KCl + 50% NaCl)
+        mass_of_K = mass_of_KCl * self.weight_fraction_of_K
+        mass_of_K40 = mass_of_K * self.abundance_K40
+        number_of_K40_in_sample_perKg = (((mass_of_K40 * 1000) / total_sample_mass) * self.avogadro) / 40
+        specific_activity = number_of_K40_in_sample_perKg * self.decay_constant_K40 # in [Bq/kg]
+
+        return specific_activity, total_sample_mass / 1000
     
     def get_live_time(self):
         """
@@ -179,6 +208,33 @@ class SimulationAnalysis:
             df['Counts_error'] = [f"{err:.6e}" for err in result_errors]
             df.to_csv(file, index=False, header=False, sep='\t')
     
+    def convert_probs_to_cps(self, files, specific_activity, total_mass):
+        """
+        Converts the each broadened probability of tally to cps.
+    
+        Args:
+            files (list): List of string that contains the name of csv files 
+                          which are extracted from an MCNP RhoC detector simulation output file.
+                          The probabilities of the tally should be broadened first.
+            specific_activity (float): The number of particles that are radiated by the source per second.
+        
+        Returns:
+            None: It modifies the csv files by adding a cloumn that contains calculated cps.
+        """
+        
+        for file in files:
+            df = pd.read_csv(file, sep='\t', header=None, names=['Energies', 'Probabilities',
+                                                                 'Errors', 'Broadenings', 'Broadening_errors'])
+            result = np.zeros(len(df['Broadenings']), float)
+            result_errors = np.zeros(len(df['Broadenings']), float)
+            values_with_errors = [ufloat(val, err) for val, err in zip(df['Broadenings'], df['Broadening_errors'])]
+            for i in range(len(df['Broadenings'])):    
+                result[i] += values_with_errors[i].nominal_value * self.branching_K40 * total_mass * specific_activity
+                result_errors[i] += values_with_errors[i].std_dev * self.branching_K40 * total_mass * specific_activity
+            df['cps'] = [f"{val:.6e}" for val in result]
+            df['cps_error'] = [f"{err:.6e}" for err in result_errors]
+            df.to_csv(file, index=False, header=False, sep='\t')
+    
     def csv_to_dfs(self, files: Union[str, List[str]], *args, titels=['Energies',
                                                                       'Probs',
                                                                       'Errors',
@@ -192,9 +248,9 @@ class SimulationAnalysis:
     
         Args:
             files (str or list): String or list of strings that specifies the csv files
-                                     from which dataframes will be created. If user creates only
-                                     one dataframe but still wants to store it in a dictionary than
-                                     it must be given as a list with only one element.
+                                 from which dataframes will be created. If user creates only
+                                 one dataframe but still wants to store it in a dictionary than
+                                 it must be given as a list with only one element.
             titels (list): List of strings that specifies the column titels of the dataframes.
             *args (str or list): String or list of strings that specifies the names of the dataframes
                                  as keys of a dictionary. If it is not specified the names will be
@@ -217,7 +273,7 @@ class SimulationAnalysis:
                     dfs[args[i-1]] = pd.read_csv(file, sep='\t', header=None, names=titels)
             return dfs
     
-    def integrate_spectrum(self, dfs, starting_bin, ending_bin, live_time):
+    def integrate_spectrum(self, dfs, starting_bin, ending_bin):
         """
         Integrates the counts of a spectrum over a given interval, and calculates the count
         per second (cps) value of the interval.
@@ -247,16 +303,6 @@ class SimulationAnalysis:
         df1 = pd.DataFrame({'labels': labels, 'integrals': integrals, 'integrals_error': integrals_error})
         dfs.update({'Integrals': df1})
         
-        # count per second calculations
-        cps_with_errors = [ufloat(val, err) for val, err in zip(dfs['Integrals']['integrals'],
-                                                                dfs['Integrals']['integrals_error'])]
-        nom_val = []
-        err_val = []
-        for i in range(len(cps_with_errors)):
-            nom_val.append(cps_with_errors[i].nominal_value / live_time)
-            err_val.append(cps_with_errors[i].std_dev / live_time)
-        dfs['Integrals']['count_rates'] = nom_val
-        dfs['Integrals']['count_rates_error'] = err_val
         return dfs
 
     def plot_spectrum(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, column_name_for_errors=None,
