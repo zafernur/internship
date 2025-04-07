@@ -49,7 +49,17 @@ class SimulationAnalysis:
         files.sort()
         return files
     
-    def create_csv(self, files):
+    def get_tally_number(self):
+        """
+        Gets the tally number from the user.
+    
+        Returns:
+            str: The tally number as a string.
+        """
+        tally_number = input('Enter the tally number...')
+        return tally_number
+    
+    def create_csv(self, files, tally_number):
         """
         Creates csv files from a list of MCNP output file. CSV files are created in
         the working directory with the columns:
@@ -67,22 +77,15 @@ class SimulationAnalysis:
             with open(file, 'r') as fp:
             # read and store all the lines into the lines list
                 lines = fp.readlines()
-            crystal_cell = next((line.split("F8:P")[1].strip() for line in lines if "F8:P" in line), None)
-            the_line = lines.index(f' cell  {crystal_cell}                                                                                                                              \n')
-            if file[-3] == '0':
-                with open(file[:-3]+'csv', 'w') as fp:
-                #iterate each line
-                    for number, line in enumerate(lines):
-                        if number in range(the_line+2, the_line+304):
-                            line = line[4:14]+'\t'+line[17:28]+'\t'+line[29:]
-                            fp.write(line)
-            else:
-                with open(file[:-4]+file[-3]+'.csv', 'w') as fp:
-                #iterate each line
-                    for number, line in enumerate(lines):
-                        if number in range(the_line+2, the_line+304):
-                            line = line[4:14]+'\t'+line[17:28]+'\t'+line[29:]
-                            fp.write(line)
+            crystal_cell = next((line.lower().split(f"{tally_number}:p")[1].strip() for line in lines if f"{tally_number}:p".lower() in line.lower()), None)
+            target_string = f' cell  {crystal_cell}                                                                                                                              \n'
+            the_line = [i for i, line in enumerate(lines) if line.strip() == target_string.strip()][-1]
+            with open(file[:-2]+'.csv', 'w') as fp:
+            #iterate each line
+                for number, line in enumerate(lines):
+                    if number in range(the_line+2, the_line+304):
+                        line = line[4:14]+'\t'+line[17:28]+'\t'+line[29:]
+                        fp.write(line)
     
     def broadening(self, files):
         """
