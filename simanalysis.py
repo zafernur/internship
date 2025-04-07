@@ -311,7 +311,7 @@ class SimulationAnalysis:
     def plot_spectrum(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, column_name_for_errors=None,
                       start_x=0, end_x=300, savefig_name=' ', title=' ', xlabel=' ', ylabel=' ', labels=None, colors=None,
                       fig_size=(8,4), x_lims=False, y_lims=False, xscale='linear', yscale='linear', plot_type='scatter',
-                      grid_major=True, grid_minor=True, trans=True, **kwargs):
+                      grid_major=True, grid_minor=True, trans=True, ncol=None, **kwargs):
         """
         Plots the spectra obtained from MCNP simulations in one plot, on top of each other.
     
@@ -434,7 +434,7 @@ class SimulationAnalysis:
         if len(which_dataframes) == 1:
             plt.savefig(savefig_name, edgecolor='none', transparent=trans)
         else:
-            ax.legend([label for label in labels], fontsize=7, fancybox=False,
+            ax.legend([label for label in labels], ncol=ncol, fontsize=7, fancybox=False,
                       framealpha= 0.0, facecolor='inherit')
             plt.savefig(savefig_name, edgecolor='none', transparent=trans)
         return fig, ax
