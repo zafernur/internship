@@ -23,16 +23,23 @@ class SimulationAnalysis:
         self.c0 = 0.0; self.c1 = 0.04; self.c2 = 0.0
         self.avogadro = 6.022e23
         # RhoC source data
-        self.strength_date = '2024/1/15'
+        self.strength_date = '2025/3/15'
         self.half_life = 2605
-        self.branching_ratio=2.7985
-        self.source_strength=1049000
+        self.branching_ratio=2.7985 # Na
+        self.source_strength=1086000
 
         # Saltmine soruce material data (50% KCl + 50% NaCl)
         self.weight_fraction_of_K = 0.524 # Fraction in KCl
         self.abundance_K40 = 0.000117
         self.decay_constant_K40 = 1.76e-17 # in [1/s]
-        self.branching_K40 = 0.1067
+        
+        # Branching ratios of natural radionuclides
+        self.branchings = {
+                           "K": 0.1067,
+                           "Th": 2.628,
+                           "U": 2.197,
+                           "Cs": 0.87
+                        }
 
     def create_list_of_files(self, extension, directory=os.getcwd()):
         """
@@ -211,7 +218,7 @@ class SimulationAnalysis:
             df['Counts_error'] = [f"{err:.6e}" for err in result_errors]
             df.to_csv(file, index=False, header=False, sep='\t')
     
-    def convert_probs_to_cps(self, files, specific_activity, total_mass):
+    def convert_probs_to_cps(self, files, specific_activity, total_mass, nuclide):
         """
         Converts the each broadened probability of tally to cps.
     
@@ -219,7 +226,10 @@ class SimulationAnalysis:
             files (list): List of string that contains the name of csv files 
                           which are extracted from an MCNP RhoC detector simulation output file.
                           The probabilities of the tally should be broadened first.
-            specific_activity (float): The number of particles that are radiated by the source per second.
+            specific_activity (float): The number of particles that are radiated by the source per second per kilogram.
+            total_mass (float): The total mass of the source; in [kg].
+            nuclide (str): Element symbol of natural radionuclide to be considered. It must be K, Th, U, or Cs.
+            
         
         Returns:
             None: It modifies the csv files by adding a cloumn that contains calculated cps.
@@ -232,8 +242,8 @@ class SimulationAnalysis:
             result_errors = np.zeros(len(df['Broadenings']), float)
             values_with_errors = [ufloat(val, err) for val, err in zip(df['Broadenings'], df['Broadening_errors'])]
             for i in range(len(df['Broadenings'])):    
-                result[i] += values_with_errors[i].nominal_value * self.branching_K40 * total_mass * specific_activity
-                result_errors[i] += values_with_errors[i].std_dev * self.branching_K40 * total_mass * specific_activity
+                result[i] += values_with_errors[i].nominal_value * self.branchings[nuclide.capitalize()] * total_mass * specific_activity
+                result_errors[i] += values_with_errors[i].std_dev * self.branchings[nuclide.capitalize()] * total_mass * specific_activity
             df['cps'] = [f"{val:.6e}" for val in result]
             df['cps_error'] = [f"{err:.6e}" for err in result_errors]
             df.to_csv(file, index=False, header=False, sep='\t')
@@ -311,7 +321,7 @@ class SimulationAnalysis:
     def plot_spectrum(self, dfs, which_dataframes, column_name_for_x, column_name_for_y, column_name_for_errors=None,
                       start_x=0, end_x=300, savefig_name=' ', title=' ', xlabel=' ', ylabel=' ', labels=None, colors=None,
                       fig_size=(8,4), x_lims=False, y_lims=False, xscale='linear', yscale='linear', plot_type='scatter',
-                      grid_major=True, grid_minor=True, trans=True, ncol=None, **kwargs):
+                      grid_major=True, grid_minor=True, trans=True, ncol=1, normalized=False, norm_ref=0,  **kwargs):
         """
         Plots the spectra obtained from MCNP simulations in one plot, on top of each other.
     
@@ -346,78 +356,78 @@ class SimulationAnalysis:
         """
     
         fig, ax = plt.subplots(1, 1, figsize=fig_size, dpi=200)
-    
-        if plot_type == 'scatter':
-            for i in range(len(which_dataframes)):
+
+        if normalized:
+            y = dfs[which_dataframes[norm_ref]][column_name_for_y][start_x:end_x].max()
+        else: y = 1.0
+
+        for i in range(len(which_dataframes)):
+            if plot_type == 'scatter':
                 if colors:
                     ax.scatter(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], color=colors[i], **kwargs)
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, color=colors[i], **kwargs)
                 else:
                     ax.scatter(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
-                ax.set_xscale(xscale)
-                ax.set_yscale(yscale)
-            ax.minorticks_on()
-            ax.tick_params(which='both', direction='in', top=True, right=True)
-            ax.set_axisbelow(True)
-        elif plot_type == 'stackplot':
-            for i in range(len(which_dataframes)):
-                if colors:
-                    ax.stackplot(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], color=colors[i], **kwargs)
-                else:
-                    ax.stackplot(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
-                ax.set_xscale(xscale)
-                ax.set_yscale(yscale)
-            ax.minorticks_on()
-            ax.tick_params(which='both', direction='in', top=True, right=True)
-            ax.set_axisbelow(True)
-        elif plot_type == 'line':
-            for i in range(len(which_dataframes)):
-                if colors:
-                    ax.line(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], color=colors[i], **kwargs)
-                else:
-                    ax.line(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
-                ax.set_xscale(xscale)
-                ax.set_yscale(yscale)
-            ax.minorticks_on()
-            ax.tick_params(which='both', direction='in', top=True, right=True)
-            ax.set_axisbelow(True)
-        elif plot_type == 'bar':
-            for i in range(len(which_dataframes)):
-                if colors:
-                    ax.bar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], color=colors[i], **kwargs)
-                else:
-                    ax.bar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x], **kwargs)
-                ax.set_xscale(xscale)
-                ax.set_yscale(yscale)
-            ax.minorticks_on()
-            ax.tick_params(which='both', direction='in', top=True, right=True)
-            ax.set_axisbelow(True)
-        elif plot_type == 'errorbar':
-            for i in range(len(which_dataframes)):
-                ax.errorbar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
-                        dfs[which_dataframes[i]][column_name_for_y][start_x:end_x],
-                        yerr=dfs[which_dataframes[i]][column_name_for_errors][start_x:end_x], fmt='o', **kwargs)
-            ax.tick_params(which='both', direction='in', top=True, right=True)
-            ax.set_axisbelow(True)
-            if which_dataframes == 'Integrals':
-                ax.ticklabel_format(useMathText=True)
-                ax.ticklabel_format(style='sci', axis = 'y', scilimits =(2,3))
-                ax.set_xticks(dfs['Integrals']['labels'], labels= list(dfs.keys())[:len(dfs.keys())-1], fontsize=8)
-                ax.minorticks_off()
-                ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
-            else:
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, **kwargs)
                 ax.set_xscale(xscale)
                 ax.set_yscale(yscale)
                 ax.minorticks_on()
-        else:
-            raise ValueError("Invalid plot type. Choose from 'scatter', 'stackplot',  'line', 'bar', or 'errorbar'.")
+                ax.tick_params(which='both', direction='in', top=True, right=True)
+                ax.set_axisbelow(True)
+            elif plot_type == 'stackplot':
+                if colors:
+                    ax.stackplot(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, color=colors[i], **kwargs)
+                else:
+                    ax.stackplot(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, **kwargs)
+                ax.set_xscale(xscale)
+                ax.set_yscale(yscale)
+                ax.minorticks_on()
+                ax.tick_params(which='both', direction='in', top=True, right=True)
+                ax.set_axisbelow(True)
+            elif plot_type == 'line':
+                if colors:
+                    ax.line(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, color=colors[i], **kwargs)
+                else:
+                    ax.line(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, **kwargs)
+                ax.set_xscale(xscale)
+                ax.set_yscale(yscale)
+                ax.minorticks_on()
+                ax.tick_params(which='both', direction='in', top=True, right=True)
+                ax.set_axisbelow(True)
+            elif plot_type == 'bar':
+                if colors:
+                    ax.bar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, color=colors[i], **kwargs)
+                else:
+                    ax.bar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                               dfs[which_dataframes[i]][column_name_for_y][start_x:end_x]/y, **kwargs)
+                ax.set_xscale(xscale)
+                ax.set_yscale(yscale)
+                ax.minorticks_on()
+                ax.tick_params(which='both', direction='in', top=True, right=True)
+                ax.set_axisbelow(True)
+            elif plot_type == 'errorbar':
+                ax.errorbar(dfs[which_dataframes[0]][column_name_for_x][start_x:end_x],
+                        dfs[which_dataframes[i]][column_name_for_y][start_x:end_x],
+                        yerr=dfs[which_dataframes[i]][column_name_for_errors][start_x:end_x], fmt='o', **kwargs)
+                ax.tick_params(which='both', direction='in', top=True, right=True)
+                ax.set_axisbelow(True)
+                if which_dataframes == 'Integrals':
+                    ax.ticklabel_format(useMathText=True)
+                    ax.ticklabel_format(style='sci', axis = 'y', scilimits =(2,3))
+                    ax.set_xticks(dfs['Integrals']['labels'], labels= list(dfs.keys())[:len(dfs.keys())-1], fontsize=8)
+                    ax.minorticks_off()
+                    ax.yaxis.set_minor_locator(tck.AutoMinorLocator())
+                else:
+                    ax.set_xscale(xscale)
+                    ax.set_yscale(yscale)
+                    ax.minorticks_on()
+            else:
+                raise ValueError("Invalid plot type. Choose from 'scatter', 'stackplot',  'line', 'bar', or 'errorbar'.")
         
         ax.set_title(title)
         ax.set_xlabel(xlabel)
