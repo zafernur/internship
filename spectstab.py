@@ -237,7 +237,7 @@ class SpectrumStabilizer:
             for line in json_file:
                 data = json.loads(line)
                 dicts = next((item for item in data), None)
-                if dicts.get('eID') == 'SPECTRO_4841':
+                if type(dicts.get('eID')) is str and dicts.get('eID').startswith("SPECTRO") and 'v' in dicts.keys():
                     rows.append(dicts.get('v'))
                 else: continue
 
@@ -245,9 +245,11 @@ class SpectrumStabilizer:
         with open(raw_csv, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
             # Write data from each dictionary
+            header = ["Realtime", "Livetime", "Total", "Countrate", "Spectrum"] + [""] * (len(rows[0]["Spectrum"]) - 1)
+            writer.writerow(header)
             for row in rows:
                 if row != None:
-                    # Eitract individual elements from the "Spectrum" list
+                    # Extract individual elements from the "Spectrum" list
                     spectrum_values = row['Spectrum']
                     other_values = [row['Realtime'], row['Livetime'], row['Total'], row['Countrate']]
                     writer.writerow(other_values + spectrum_values)
